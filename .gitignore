@@ -1,0 +1,35 @@
+# Node & Bun
+node_modules/
+.output/
+.nuxt/
+dist/
+*.log
+
+# Tauri & Rust
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Environment & local secrets
+.env
+.env.*
+!.env.example
+
+# AI agent directories (Wajib sesuai aturan git)
+.agents/
+.gemini/
+.claude/
+.roo/
+.codex/
+AGENTS.md
+GEMINI.md
+CLAUDE.md
+.mcp.json
+
+# OS files
+Thumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
