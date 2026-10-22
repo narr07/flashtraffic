@@ -32,6 +32,11 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Prepare root types
+        run: |
+          bun install
+          bun run nuxt prepare
+
       - name: Install docs dependencies
         working-directory: docs
         run: bun install
