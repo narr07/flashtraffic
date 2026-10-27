@@ -16,10 +16,24 @@ const isUrlInCampaign = (url: string) => {
 	return activeCampaign.value.targetUrls.includes(url);
 };
 
+const hasIndonesianRoutes = computed(() => {
+	return discoveredUrls.value.some(u => u.includes("/id/"));
+});
+
 const filteredUrls = computed(() => {
 	if (!searchQuery.value.trim()) return discoveredUrls.value;
-	const q = searchQuery.value.toLowerCase();
+	const q = searchQuery.value.toLowerCase().trim();
 	return discoveredUrls.value.filter(u => u.toLowerCase().includes(q));
+});
+
+// Calculate selected URLs strictly within the current filtered view
+const selectedFilteredUrls = computed(() => {
+	return filteredUrls.value.filter(u => selectedUrls.value.includes(u));
+});
+
+// The actual number of selected items in the user's active view
+const activeSelectionCount = computed(() => {
+	return searchQuery.value.trim() ? selectedFilteredUrls.value.length : selectedUrls.value.length;
 });
 
 const isAllFilteredSelected = computed(() => {
@@ -32,10 +46,13 @@ const isSomeFilteredSelected = computed(() => {
 	return filteredUrls.value.some(u => selectedUrls.value.includes(u)) && !isAllFilteredSelected.value;
 });
 
-const toggleSelectAll = () => {
+const toggleSelectAllFiltered = () => {
 	if (isAllFilteredSelected.value) {
-		selectedUrls.value = selectedUrls.value.filter(u => !filteredUrls.value.includes(u));
+		// Deselect all items in the current filter view
+		const filteredSet = new Set(filteredUrls.value);
+		selectedUrls.value = selectedUrls.value.filter(u => !filteredSet.has(u));
 	} else {
+		// Select all items in the current filter view
 		const newSet = new Set([...selectedUrls.value, ...filteredUrls.value]);
 		selectedUrls.value = Array.from(newSet);
 	}
@@ -49,6 +66,14 @@ const toggleSelectOne = (url: string) => {
 	}
 };
 
+const clearAllSelection = () => {
+	selectedUrls.value = [];
+};
+
+const setQuickFilter = (query: string) => {
+	searchQuery.value = query;
+};
+
 const handleCrawl = async () => {
 	if (!targetDomain.value.trim()) return;
 	isCrawling.value = true;
@@ -57,11 +82,13 @@ const handleCrawl = async () => {
 	try {
 		const urls = await backend.fetchSitemapUrls(targetDomain.value);
 		discoveredUrls.value = urls;
-		selectedUrls.value = [...urls]; // Auto-select all by default for convenience
+		// Keep selection empty initially so user is in complete control
+		selectedUrls.value = [];
+		searchQuery.value = "";
 		addLog("SUCCESS", `Discovered ${urls.length} internal links from ${targetDomain.value}.`);
 		toast.add({
 			title: "Website Crawl Complete",
-			description: `Found ${urls.length} unique pages from ${targetDomain.value}`,
+			description: `Found ${urls.length} unique pages from ${targetDomain.value}. Select pages or click Import All.`,
 			color: "success",
 			icon: "i-lucide-globe"
 		});
@@ -106,8 +133,10 @@ const importUrls = (urlsToImport: string[], label: string) => {
 };
 
 const importSelected = () => {
-	if (selectedUrls.value.length === 0) return;
-	importUrls(selectedUrls.value, `${selectedUrls.value.length} Selected`);
+	// If a search filter is active, import ONLY the selected items that match the filter!
+	const toImport = searchQuery.value.trim() ? selectedFilteredUrls.value : selectedUrls.value;
+	if (toImport.length === 0) return;
+	importUrls(toImport, `${toImport.length} Selected`);
 };
 
 const importAll = () => {
@@ -153,19 +182,22 @@ const importSingle = (url: string) => {
 				<span>Target: <strong class="text-highlighted">{{ targetDomain || 'None' }}</strong></span>
 				<span>•</span>
 				<span>Discovered: <strong class="text-primary">{{ discoveredUrls.length }}</strong> URLs</span>
-				<span v-if="selectedUrls.length > 0">•</span>
-				<span v-if="selectedUrls.length > 0">Selected: <strong class="text-success">{{ selectedUrls.length }}</strong></span>
+				<span v-if="activeSelectionCount > 0">•</span>
+				<span v-if="activeSelectionCount > 0">
+					Selected: <strong class="text-success">{{ activeSelectionCount }}</strong>
+					<span v-if="searchQuery.trim()" class="text-muted/70"> (filtered)</span>
+				</span>
 			</div>
 
 			<div class="flex items-center gap-2">
 				<UButton
-					v-if="selectedUrls.length > 0"
+					v-if="activeSelectionCount > 0"
 					color="primary"
 					icon="i-lucide-check-circle"
 					size="xs"
 					@click="importSelected"
 				>
-					Import Selected ({{ selectedUrls.length }})
+					Import Selected ({{ activeSelectionCount }})
 				</UButton>
 				<UButton
 					v-if="discoveredUrls.length > 0"
@@ -216,8 +248,8 @@ const importSingle = (url: string) => {
 						<UIcon name="i-lucide-list" class="size-4 text-primary" />
 						<h3 class="text-sm font-semibold text-highlighted">Discovered Pages Table</h3>
 						<UBadge size="xs" color="primary" variant="subtle">{{ discoveredUrls.length }} Total</UBadge>
-						<UBadge v-if="selectedUrls.length > 0" size="xs" color="success" variant="subtle">
-							{{ selectedUrls.length }} Selected
+						<UBadge v-if="activeSelectionCount > 0" size="xs" color="success" variant="subtle">
+							{{ activeSelectionCount }} Selected
 						</UBadge>
 					</div>
 
@@ -226,10 +258,10 @@ const importSingle = (url: string) => {
 							size="xs"
 							color="primary"
 							icon="i-lucide-check-square"
-							:disabled="selectedUrls.length === 0"
+							:disabled="activeSelectionCount === 0"
 							@click="importSelected"
 						>
-							Import Selected ({{ selectedUrls.length }})
+							Import Selected ({{ activeSelectionCount }})
 						</UButton>
 						<UButton
 							size="xs"
@@ -254,24 +286,78 @@ const importSingle = (url: string) => {
 			</template>
 
 			<div class="space-y-4">
-				<!-- Filter Bar -->
-				<div class="flex items-center justify-between gap-3 pb-3 border-b border-default">
-					<UInput
-						v-model="searchQuery"
-						placeholder="Filter pages by keyword or path..."
-						icon="i-lucide-filter"
-						size="xs"
-						class="max-w-xs flex-1"
-					/>
+				<!-- Filter Bar with Locale Pills -->
+				<div class="flex flex-col gap-2 pb-3 border-b border-default">
+					<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+						<div class="flex items-center gap-2 flex-1 max-w-md">
+							<UInput
+								v-model="searchQuery"
+								placeholder="Filter pages by keyword or path (e.g. id/blog/)..."
+								icon="i-lucide-filter"
+								size="xs"
+								class="flex-1"
+							/>
+							<UButton
+								v-if="searchQuery"
+								size="xs"
+								variant="ghost"
+								color="neutral"
+								icon="i-lucide-x"
+								@click="searchQuery = ''"
+							/>
+						</div>
 
-					<div class="flex items-center gap-2 text-xs">
+						<div class="flex items-center gap-2 text-xs">
+							<UButton
+								size="xs"
+								variant="link"
+								color="primary"
+								@click="toggleSelectAllFiltered"
+							>
+								{{ isAllFilteredSelected ? 'Deselect Filtered' : 'Select All Filtered' }}
+							</UButton>
+							<span v-if="selectedUrls.length > 0" class="text-muted/60">•</span>
+							<UButton
+								v-if="selectedUrls.length > 0"
+								size="xs"
+								variant="link"
+								color="error"
+								@click="clearAllSelection"
+							>
+								Clear All ({{ selectedUrls.length }})
+							</UButton>
+						</div>
+					</div>
+
+					<!-- Quick Language/Path Filter Pills -->
+					<div v-if="hasIndonesianRoutes" class="flex items-center gap-1.5 text-xs pt-1">
+						<span class="text-muted text-[11px]">Quick Filter:</span>
 						<UButton
 							size="xs"
-							variant="link"
+							:variant="searchQuery === '' ? 'solid' : 'subtle'"
 							color="neutral"
-							@click="toggleSelectAll"
+							class="text-[11px] py-0.5 px-2"
+							@click="setQuickFilter('')"
 						>
-							{{ isAllFilteredSelected ? 'Deselect All' : 'Select All Filtered' }}
+							Semua ({{ discoveredUrls.length }})
+						</UButton>
+						<UButton
+							size="xs"
+							:variant="searchQuery === 'id/' ? 'solid' : 'subtle'"
+							color="primary"
+							class="text-[11px] py-0.5 px-2"
+							@click="setQuickFilter('id/')"
+						>
+							🇮🇩 Hanya /id/ (ID)
+						</UButton>
+						<UButton
+							size="xs"
+							:variant="searchQuery === 'blog/' ? 'solid' : 'subtle'"
+							color="neutral"
+							class="text-[11px] py-0.5 px-2"
+							@click="setQuickFilter('blog/')"
+						>
+							Semua Blog
 						</UButton>
 					</div>
 				</div>
@@ -284,7 +370,7 @@ const importSingle = (url: string) => {
 								<th class="py-2.5 px-3 w-10">
 									<UCheckbox
 										:model-value="isAllFilteredSelected ? true : isSomeFilteredSelected ? 'indeterminate' : false"
-										@update:model-value="toggleSelectAll"
+										@update:model-value="toggleSelectAllFiltered"
 									/>
 								</th>
 								<th class="py-2.5 px-3 w-12 text-muted">#</th>
@@ -349,7 +435,7 @@ const importSingle = (url: string) => {
 						Showing {{ filteredUrls.length }} of {{ discoveredUrls.length }} pages
 					</span>
 					<span>
-						{{ selectedUrls.length }} item(s) selected for import
+						{{ activeSelectionCount }} item(s) selected for import
 					</span>
 				</div>
 			</div>

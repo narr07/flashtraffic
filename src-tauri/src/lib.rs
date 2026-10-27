@@ -27,7 +27,8 @@ pub fn run() {
 			test_browserstack_credentials,
 			fetch_sitemap_urls,
 			get_engine_status,
-			clear_campaign_logs
+			clear_campaign_logs,
+			get_installed_browsers
 		])
 		.setup(|_app| {
 			#[cfg(desktop)]

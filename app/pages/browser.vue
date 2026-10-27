@@ -1,11 +1,56 @@
 <script setup lang="ts">
+import { useTrafficBackend } from "~/composables/useTrafficBackend";
 import { useTrafficState } from "~/composables/useTrafficState";
 
+const backend = useTrafficBackend();
 const { activeCampaign, addLog } = useTrafficState();
 const toast = useToast();
 
-const browserEngines = ["Chromium (Standard)", "Firefox (Gecko)", "WebKit (Safari Engine)"];
-const selectedEngine = ref("Chromium (Standard)");
+const installedBrowsers = ref<Array<{ id: string; name: string; path: string; is_available: boolean }>>([]);
+const isLoadingBrowsers = ref(false);
+
+onMounted(async () => {
+	try {
+		isLoadingBrowsers.value = true;
+		installedBrowsers.value = await backend.getInstalledBrowsers();
+	} catch (e) {
+		console.warn("Failed to get installed browsers:", e);
+	} finally {
+		isLoadingBrowsers.value = false;
+	}
+});
+
+const engineTypeOptions = [
+	{
+		value: "system_browser",
+		label: "Pinjam Browser Terpasang (System Browser)",
+		description: "Gunakan browser yang sudah ada di komputer (Edge, Chrome, Brave, atau custom .exe). Mendukung visual window terbuka!"
+	},
+	{
+		value: "native_light",
+		label: "Engine Ringan Internal (Ultra-Lightweight Rust)",
+		description: "Mesin HTTP asinkron internal bawaan Rust. 0 MB unduhan, tanpa browser, konsumsi RAM < 30 MB. Cepat & hemat daya."
+	}
+];
+
+const browserSelectOptions = computed(() => {
+	const list = installedBrowsers.value.map(b => ({
+		label: `${b.name} ${b.is_available ? '✓ (Terdeteksi)' : '(Tidak Ditemukan)'}`,
+		value: b.id,
+		disabled: !b.is_available
+	}));
+	list.push({
+		label: "Path Kustom (.exe sendiri)...",
+		value: "custom",
+		disabled: false
+	});
+	return list;
+});
+
+// Ensure defaults for Engine
+if (!activeCampaign.value.engineType) activeCampaign.value.engineType = "system_browser";
+if (!activeCampaign.value.browserChannel) activeCampaign.value.browserChannel = "msedge";
+if (activeCampaign.value.customBrowserPath === undefined) activeCampaign.value.customBrowserPath = "";
 
 const viewportPresets = [
 	{ label: "Full HD Desktop (1920 x 1080)", width: 1920, height: 1080 },
@@ -33,6 +78,7 @@ if (activeCampaign.value.useRandomProxy === undefined) activeCampaign.value.useR
 if (!activeCampaign.value.platformSwitching) activeCampaign.value.platformSwitching = "random_page";
 if (!activeCampaign.value.specialMode) activeCampaign.value.specialMode = "surfing";
 if (!activeCampaign.value.surfingCount) activeCampaign.value.surfingCount = 2;
+
 const durationTypes = [
 	{ value: "constant", label: "Constant", description: "Fixed duration" },
 	{ value: "variable", label: "Variable", description: "Random jitter range" }
@@ -205,7 +251,7 @@ const updateSettings = () => {
 	addLog("SUCCESS", "Traffic simulation preferences & FlashTraffic settings saved.");
 	toast.add({
 		title: "Simulation Settings Saved",
-		description: `Active Mode: ${activeCampaign.value.trafficMode.toUpperCase()} | Special Mode: ${activeCampaign.value.specialMode}`,
+		description: `Active Mode: ${activeCampaign.value.trafficMode.toUpperCase()} | Engine: ${activeCampaign.value.engineType}`,
 		color: "success",
 		icon: "i-lucide-check-circle"
 	});
@@ -461,29 +507,128 @@ const applyHumanRealisticPreset = () => {
 			</UCard>
 		</div>
 
-		<!-- Browser core -->
+		<!-- Traffic Engine & Browser Configuration -->
 		<UCard variant="subtle">
 			<template #header>
-				<div class="flex items-center gap-2">
-					<UIcon name="i-lucide-globe" class="size-4 text-primary" />
-					<h3 class="text-sm font-semibold text-highlighted">Browser Core</h3>
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<UIcon name="i-lucide-globe" class="size-4 text-primary" />
+						<h3 class="text-sm font-semibold text-highlighted">Pilihan Mesin Browser (Traffic Engine)</h3>
+					</div>
+					<UBadge
+						size="xs"
+						variant="subtle"
+						:color="activeCampaign.engineType === 'system_browser' ? 'primary' : 'success'"
+					>
+						{{ activeCampaign.engineType === 'system_browser' ? 'System Browser' : 'Native Rust Engine' }}
+					</UBadge>
 				</div>
 			</template>
-			<div class="space-y-4">
-				<div class="flex items-center justify-between gap-4 p-3 rounded-lg bg-elevated/50">
-					<div>
-						<div class="text-sm font-medium text-highlighted">Headless Mode</div>
-						<p class="text-xs text-muted">Runs silently in background without UI windows (fast and lightweight).</p>
+
+			<div class="space-y-5">
+				<!-- Engine Mode Selection (2 Pilihan) -->
+				<UFormField label="Pilih Mesin Eksekusi" help="Tentukan apakah ingin meminjam browser dari komputer atau menggunakan engine ultra-ringan internal.">
+					<URadioGroup
+						v-model="activeCampaign.engineType"
+						:items="engineTypeOptions"
+						variant="card"
+						orientation="horizontal"
+						:ui="radioUi"
+					/>
+				</UFormField>
+
+				<!-- OPTION 1: System Browser Settings -->
+				<div v-if="activeCampaign.engineType === 'system_browser'" class="p-4 rounded-xl bg-elevated/40 border border-default space-y-4">
+					<div class="flex items-start gap-2.5">
+						<UIcon name="i-lucide-laptop" class="size-5 text-primary shrink-0 mt-0.5" />
+						<div class="space-y-0.5">
+							<h4 class="text-xs font-semibold text-highlighted">Meminjam Browser Terpasang</h4>
+							<p class="text-[11px] text-muted">
+								FlashTraffic memanfaatkan browser yang sudah ada di Windows (seperti Microsoft Edge, Google Chrome, atau Brave). Tidak perlu mengunduh Chromium tambahan atau package Playwright terpisah.
+							</p>
+						</div>
 					</div>
-					<USwitch v-model="activeCampaign.headless" />
+
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<UFormField label="Pilih Browser di Komputer" :help="isLoadingBrowsers ? 'Memindai browser...' : 'Otomatis mendeteksi browser yang terpasang di sistem'">
+							<USelect
+								v-model="activeCampaign.browserChannel"
+								:items="browserSelectOptions"
+								class="w-full"
+								:loading="isLoadingBrowsers"
+							/>
+						</UFormField>
+
+						<UFormField label="Viewport Layar">
+							<USelect v-model="selectedViewport" :items="viewportPresets.map(v => v.label)" class="w-full" />
+						</UFormField>
+					</div>
+
+					<!-- Custom path input if custom is chosen -->
+					<UFormField
+						v-if="activeCampaign.browserChannel === 'custom'"
+						label="Path File Executable (.exe)"
+						help="Masukkan path lengkap ke browser yang ingin dipinjam (contoh: C:\Program Files\...\browser.exe)"
+					>
+						<UInput
+							v-model="activeCampaign.customBrowserPath"
+							placeholder="C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+							class="w-full"
+						/>
+					</UFormField>
+
+					<!-- Headless Mode Toggle with Explicit Explanation -->
+					<div class="flex items-center justify-between gap-4 p-3 rounded-lg bg-default border border-default">
+						<div class="space-y-0.5">
+							<div class="flex items-center gap-2">
+								<span class="text-xs font-semibold text-highlighted">Headless Mode</span>
+								<UBadge size="xs" :color="activeCampaign.headless ? 'neutral' : 'success'" variant="subtle">
+									{{ activeCampaign.headless ? 'Latar Belakang (Silent)' : 'Jendela Terbuka (Visual)' }}
+								</UBadge>
+							</div>
+							<p class="text-[11px] text-muted">
+								<span v-if="activeCampaign.headless">
+									Berjalan senyap di latar belakang tanpa membuka jendela browser (cepat & tidak mengganggu aktivitas Anda).
+								</span>
+								<span v-else class="text-success font-medium">
+									Jendela browser asli akan TERBUKA di layar secara visual! Anda dapat melihat langsung browser membuka link website target.
+								</span>
+							</p>
+						</div>
+						<USwitch v-model="activeCampaign.headless" />
+					</div>
 				</div>
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-					<UFormField label="Browser Core">
-						<USelect v-model="selectedEngine" :items="browserEngines" class="w-full" />
-					</UFormField>
-					<UFormField label="Viewport">
-						<USelect v-model="selectedViewport" :items="viewportPresets.map(v => v.label)" class="w-full" />
-					</UFormField>
+
+				<!-- OPTION 2: Ultra-Lightweight Native Rust Engine -->
+				<div v-else class="p-4 rounded-xl bg-primary/5 border border-primary/20 space-y-3">
+					<div class="flex items-start gap-2.5">
+						<UIcon name="i-lucide-zap" class="size-5 text-primary shrink-0 mt-0.5" />
+						<div class="space-y-0.5">
+							<h4 class="text-xs font-semibold text-highlighted">Engine Ringan Internal (Ultra-Lightweight Native Rust)</h4>
+							<p class="text-[11px] text-muted">
+								Mesin bawaan langsung dari FlashTraffic yang dikompilasi ke binary native Rust. Tidak membutuhkan browser external maupun Node.js.
+							</p>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+						<div class="p-2.5 rounded-lg bg-elevated/60 text-center">
+							<div class="text-[11px] text-muted">Ukuran Tambahan</div>
+							<div class="text-xs font-bold text-success">0 MB (Zero Download)</div>
+						</div>
+						<div class="p-2.5 rounded-lg bg-elevated/60 text-center">
+							<div class="text-[11px] text-muted">Konsumsi RAM</div>
+							<div class="text-xs font-bold text-primary">&lt; 30 MB (Super Hemat)</div>
+						</div>
+						<div class="p-2.5 rounded-lg bg-elevated/60 text-center">
+							<div class="text-[11px] text-muted">Dukungan Fitur</div>
+							<div class="text-xs font-bold text-highlighted">User-Agent, Proxy & Referrer</div>
+						</div>
+					</div>
+
+					<p class="text-[11px] text-dimmed italic">
+						* Catatan: Engine ini berjalan secara background untuk pengujian traffic berkecepatan tinggi tanpa menampilkan visual GUI jendela browser.
+					</p>
 				</div>
 			</div>
 		</UCard>

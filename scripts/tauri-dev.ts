@@ -26,18 +26,27 @@ async function findAvailablePort(startPort: number): Promise<number> {
 async function main(): Promise<void> {
 	const port = await findAvailablePort(DEFAULT_PORT);
 
+	const args: string[] = ["run", "tauri", "dev"];
+
+	// Only override config if port 3000 is occupied
 	if (port !== DEFAULT_PORT) {
-		console.log(`Port ${DEFAULT_PORT} is busy, using port ${port}`);
+		console.log(`Port ${DEFAULT_PORT} is busy, switching to port ${port}`);
+		const tauriConfig = JSON.stringify({
+			build: {
+				devUrl: `http://localhost:${port}`,
+				beforeDevCommand: `bun run dev --port ${port}`
+			}
+		});
+
+		// On Windows shell (cmd.exe), inner double quotes must be escaped with \"
+		const escaped = process.platform === "win32"
+			? `"${tauriConfig.replace(/"/g, '\\"')}"`
+			: tauriConfig;
+
+		args.push("--config", escaped);
 	}
 
-	const tauriConfig = JSON.stringify({
-		build: {
-			devUrl: `http://localhost:${port}`,
-			beforeDevCommand: `bun run dev --port ${port}`
-		}
-	});
-
-	const tauri = spawn("bun", ["run", "tauri", "dev", "--config", tauriConfig], {
+	const tauri = spawn("bun", args, {
 		stdio: "inherit",
 		shell: process.platform === "win32",
 		cwd: process.cwd()

@@ -19,8 +19,8 @@
 		"lint:fix": "eslint app nuxt.config.ts --fix",
 		"typecheck": "vue-tsc -b --pretty",
 		"tauri": "tauri",
-		"tauri:dev": "tauri dev",
-		"desktop:dev": "tauri dev",
+		"tauri:dev": "bun scripts/tauri-dev.ts",
+		"desktop:dev": "bun scripts/tauri-dev.ts",
 		"desktop:build": "tauri build",
 		"test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
 	},

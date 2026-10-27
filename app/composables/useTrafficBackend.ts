@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface InstalledBrowser {
+	id: string
+	name: string
+	path: string
+	is_available: boolean
+}
+
 export interface CampaignPayload {
 	name: string
 	target_urls: string[]
@@ -34,6 +41,11 @@ export interface CampaignPayload {
 	special_mode?: string
 	surfing_count?: number
 	client_timestamp?: string
+
+	// Engine & Browser Borrowing
+	engine_type?: "system_browser" | "native_light"
+	browser_channel?: string
+	custom_browser_path?: string
 }
 
 export interface ProxyTestResult {
@@ -99,23 +111,25 @@ export function useTrafficBackend() {
 		if (isTauri.value) {
 			return await invoke<string[]>("fetch_proxies_from_url", { url });
 		}
-		// Browser fallback simulation
 		return [
-			"130.110.103.245:3128",
-			"3.211.120.181:443",
-			"103.237.102.191:11111",
-			"176.111.37.216:39811",
-			"78.186.146.140:3310"
+			"104.248.63.15:3128",
+			"198.199.86.11:8080",
+			"165.227.215.71:3128",
+			"159.203.61.169:8080"
 		];
 	};
 
-	const testBrowserStackCredentials = async (username: string, accessKey: string): Promise<BrowserStackPlan> => {
+	const testBrowserStackCredentials = async (
+		username: string,
+		accessKey: string
+	): Promise<BrowserStackPlan> => {
 		if (isTauri.value) {
 			return await invoke<BrowserStackPlan>("test_browserstack_credentials", {
 				username,
 				accessKey
 			});
 		}
+		// Browser fallback simulation
 		return {
 			automate_plan: "Automate Pro (Simulated)",
 			parallel_sessions_running: 1,
@@ -165,6 +179,18 @@ export function useTrafficBackend() {
 		}
 	};
 
+	const getInstalledBrowsers = async (): Promise<InstalledBrowser[]> => {
+		if (isTauri.value) {
+			return await invoke<InstalledBrowser[]>("get_installed_browsers");
+		}
+		return [
+			{ id: "msedge", name: "Microsoft Edge (Bawaan Windows)", path: "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", is_available: true },
+			{ id: "chrome", name: "Google Chrome", path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", is_available: true },
+			{ id: "brave", name: "Brave Browser", path: "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe", is_available: false },
+			{ id: "firefox", name: "Mozilla Firefox", path: "C:\\Program Files\\Mozilla Firefox\\firefox.exe", is_available: false }
+		];
+	};
+
 	return {
 		isTauri,
 		startCampaign,
@@ -174,6 +200,7 @@ export function useTrafficBackend() {
 		testBrowserStackCredentials,
 		fetchSitemapUrls,
 		getEngineStatus,
-		clearCampaignLogs
+		clearCampaignLogs,
+		getInstalledBrowsers
 	};
 }

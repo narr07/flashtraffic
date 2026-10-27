@@ -123,13 +123,23 @@ const logClass = (line: string) => {
 	if (line.startsWith("===") || line.startsWith("---")) return "text-dimmed";
 	if (line.startsWith("Configuration Details")) return "text-info font-semibold";
 	if (line.startsWith("[Traffic]:")) return "text-warning font-bold mt-2";
+	if (line.startsWith("Visual Window opened")) return "text-success font-semibold";
 	if (line.startsWith("Current session duration:")) return "text-primary font-medium";
 	if (line.startsWith("Current platform:") || line.startsWith("Current proxy:")) return "text-muted";
 	return "text-default";
 };
 
 const config = [
-	{ label: "Mode", value: () => (activeCampaign.value.headless ? "Headless" : "Headed"), hint: "Headless runs in the background without opening visible browser windows." },
+	{
+		label: "Engine",
+		value: () => (activeCampaign.value.engineType === "native_light" ? "Ultra-Lightweight Rust" : `System (${activeCampaign.value.browserChannel === "msedge" ? "Edge" : activeCampaign.value.browserChannel === "chrome" ? "Chrome" : activeCampaign.value.browserChannel === "brave" ? "Brave" : activeCampaign.value.browserChannel === "custom" ? "Custom" : "Edge"})`),
+		hint: "Selected execution engine"
+	},
+	{
+		label: "Mode",
+		value: () => (activeCampaign.value.engineType === "native_light" ? "Silent (Background)" : (activeCampaign.value.headless ? "Headless (Silent)" : "Visual Window (Terbuka)")),
+		hint: "Headless runs in background; Visual Window opens real browser window."
+	},
 	{ label: "Physics", value: () => "Bezier & Jitter", hint: "Randomized cubic Bézier cursor curves with natural human micro-jitter." },
 	{ label: "Internal Surfing", value: () => (activeCampaign.value.allowSurfing ? "Enabled" : "Disabled"), hint: "Discovers and clicks internal domain links to increase pageviews." },
 	{ label: "Referrer", value: () => activeCampaign.value.trafficSource, hint: "Injected organic search referrer headers and keyword parameters." }
@@ -179,7 +189,10 @@ const handleStart = async () => {
 			platform_switching: activeCampaign.value.platformSwitching,
 			special_mode: activeCampaign.value.specialMode,
 			surfing_count: activeCampaign.value.surfingCount,
-			client_timestamp: dateStr
+			client_timestamp: dateStr,
+			engine_type: activeCampaign.value.engineType,
+			browser_channel: activeCampaign.value.browserChannel,
+			custom_browser_path: activeCampaign.value.customBrowserPath
 		});
 
 		isRunning.value = true;

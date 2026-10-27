@@ -1,8 +1,11 @@
 /**
  * FlashTraffic Playwright Simulation Worker
  * Simulates natural human-like web traffic, mouse physics, and multi-page surfing.
+ * Supports borrowing system-installed browsers (Edge, Chrome, Brave, Custom Path)
+ * so users never need to install external Playwright browser packages.
  */
 
+const fs = require("node:fs");
 const { chromium } = require("playwright");
 
 // Cubic Bezier calculation for human-like mouse curve trajectory
@@ -106,10 +109,13 @@ async function runSession() {
 		proxy = null,
 		allowInternalSurfing = true,
 		surfingCount = 2,
-		trafficMode = "default"
+		trafficMode = "default",
+		browserChannel = "msedge",
+		executablePath = null
 	} = config;
 
 	console.log(`[INFO] Starting visit to: ${url} (Mode: ${trafficMode})`);
+	console.log(`[INFO] Headless: ${headless} | Channel: ${browserChannel}`);
 	console.log(`[INFO] Referrer: ${referrer || "(Direct)"}`);
 
 	const launchOptions = {
@@ -130,19 +136,44 @@ async function runSession() {
 	}
 
 	let browser;
-	try {
-		browser = await chromium.launch(launchOptions);
-	} catch (launchErr) {
-		console.warn(`[WARN] Standard chromium launch failed (${launchErr.message}). Attempting system browser fallback (msedge)...`);
+
+	// Strategy 1: User specified custom executable path
+	if (executablePath && fs.existsSync(executablePath)) {
 		try {
+			console.log(`[INFO] Launching custom browser binary: ${executablePath}`);
+			browser = await chromium.launch({ ...launchOptions, executablePath });
+		} catch (err) {
+			console.warn(`[WARN] Custom binary launch failed: ${err.message}`);
+		}
+	}
+
+	// Strategy 2: Specific browser channel (e.g. "msedge", "chrome")
+	if (!browser && browserChannel && browserChannel !== "custom") {
+		try {
+			console.log(`[INFO] Borrowing installed system browser: ${browserChannel}`);
+			browser = await chromium.launch({ ...launchOptions, channel: browserChannel });
+		} catch (err) {
+			console.warn(`[WARN] Channel ${browserChannel} launch failed: ${err.message}`);
+		}
+	}
+
+	// Strategy 3: Default to Microsoft Edge (100% installed on all Windows 10 & 11)
+	if (!browser) {
+		try {
+			console.log(`[INFO] Falling back to Windows Microsoft Edge (msedge)...`);
 			browser = await chromium.launch({ ...launchOptions, channel: "msedge" });
 		} catch (edgeErr) {
-			console.warn(`[WARN] msedge fallback failed. Attempting chrome...`);
+			console.warn(`[WARN] msedge fallback failed. Trying Google Chrome channel...`);
 			try {
 				browser = await chromium.launch({ ...launchOptions, channel: "chrome" });
 			} catch (chromeErr) {
-				console.error(`[FATAL] All browser launch strategies exhausted: ${chromeErr.message}`);
-				process.exit(1);
+				console.warn(`[WARN] chrome channel failed. Trying standard bundled chromium...`);
+				try {
+					browser = await chromium.launch(launchOptions);
+				} catch (finalErr) {
+					console.error(`[FATAL] All system browser launch options exhausted: ${finalErr.message}`);
+					process.exit(1);
+				}
 			}
 		}
 	}

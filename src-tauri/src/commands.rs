@@ -19,6 +19,14 @@ static METRICS: Mutex<CampaignMetrics> = Mutex::new(CampaignMetrics {
 });
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledBrowser {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub is_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CampaignPayload {
     pub name: String,
     pub target_urls: Vec<String>,
@@ -73,6 +81,14 @@ pub struct CampaignPayload {
     pub surfing_count: Option<u32>,
     #[serde(default)]
     pub client_timestamp: Option<String>,
+
+    // Engine and System Browser Borrowing
+    #[serde(default)]
+    pub engine_type: Option<String>, // "system_browser" | "native_light"
+    #[serde(default)]
+    pub browser_channel: Option<String>, // "msedge" | "chrome" | "brave" | "custom"
+    #[serde(default)]
+    pub custom_browser_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +152,120 @@ const PLATFORM_PROFILES: &[PlatformProfile] = &[
     },
 ];
 
+pub fn resolve_system_browser_exe(channel: Option<&str>, custom_path: Option<&str>) -> Option<String> {
+    if let Some(cp) = custom_path {
+        let trimmed = cp.trim();
+        if !trimmed.is_empty() && std::path::Path::new(trimmed).exists() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let prog_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+    let prog_files_x86 = std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
+
+    match channel {
+        Some("chrome") => {
+            let candidates = [
+                format!("{}\\Google\\Chrome\\Application\\chrome.exe", prog_files),
+                format!("{}\\Google\\Chrome\\Application\\chrome.exe", prog_files_x86),
+                format!("{}\\Google\\Chrome\\Application\\chrome.exe", local_app_data),
+            ];
+            candidates.into_iter().find(|p| std::path::Path::new(p).exists())
+        }
+        Some("brave") => {
+            let candidates = [
+                format!("{}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe", prog_files),
+                format!("{}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe", prog_files_x86),
+                format!("{}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe", local_app_data),
+            ];
+            candidates.into_iter().find(|p| std::path::Path::new(p).exists())
+        }
+        Some("firefox") => {
+            let candidates = [
+                format!("{}\\Mozilla Firefox\\firefox.exe", prog_files),
+                format!("{}\\Mozilla Firefox\\firefox.exe", prog_files_x86),
+            ];
+            candidates.into_iter().find(|p| std::path::Path::new(p).exists())
+        }
+        _ => {
+            // Default: Microsoft Edge (installed on 100% of Windows 10 & 11)
+            let candidates = [
+                format!("{}\\Microsoft\\Edge\\Application\\msedge.exe", prog_files_x86),
+                format!("{}\\Microsoft\\Edge\\Application\\msedge.exe", prog_files),
+                format!("{}\\Microsoft\\Edge\\Application\\msedge.exe", local_app_data),
+            ];
+            candidates.into_iter().find(|p| std::path::Path::new(p).exists())
+        }
+    }
+}
+
+#[tauri::command(async)]
+pub async fn get_installed_browsers() -> Result<Vec<InstalledBrowser>, String> {
+    let mut browsers = Vec::new();
+
+    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let prog_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+    let prog_files_x86 = std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
+
+    // 1. Edge (Windows default)
+    let edge_paths = [
+        format!("{}\\Microsoft\\Edge\\Application\\msedge.exe", prog_files_x86),
+        format!("{}\\Microsoft\\Edge\\Application\\msedge.exe", prog_files),
+        format!("{}\\Microsoft\\Edge\\Application\\msedge.exe", local_app_data),
+    ];
+    let edge_found = edge_paths.iter().find(|p| std::path::Path::new(p).exists()).cloned();
+    browsers.push(InstalledBrowser {
+        id: "msedge".to_string(),
+        name: "Microsoft Edge (Bawaan Windows)".to_string(),
+        path: edge_found.clone().unwrap_or_else(|| edge_paths[0].clone()),
+        is_available: edge_found.is_some(),
+    });
+
+    // 2. Google Chrome
+    let chrome_paths = [
+        format!("{}\\Google\\Chrome\\Application\\chrome.exe", prog_files),
+        format!("{}\\Google\\Chrome\\Application\\chrome.exe", prog_files_x86),
+        format!("{}\\Google\\Chrome\\Application\\chrome.exe", local_app_data),
+    ];
+    let chrome_found = chrome_paths.iter().find(|p| std::path::Path::new(p).exists()).cloned();
+    browsers.push(InstalledBrowser {
+        id: "chrome".to_string(),
+        name: "Google Chrome".to_string(),
+        path: chrome_found.clone().unwrap_or_else(|| chrome_paths[0].clone()),
+        is_available: chrome_found.is_some(),
+    });
+
+    // 3. Brave Browser
+    let brave_paths = [
+        format!("{}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe", prog_files),
+        format!("{}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe", prog_files_x86),
+        format!("{}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe", local_app_data),
+    ];
+    let brave_found = brave_paths.iter().find(|p| std::path::Path::new(p).exists()).cloned();
+    browsers.push(InstalledBrowser {
+        id: "brave".to_string(),
+        name: "Brave Browser".to_string(),
+        path: brave_found.clone().unwrap_or_else(|| brave_paths[0].clone()),
+        is_available: brave_found.is_some(),
+    });
+
+    // 4. Firefox
+    let firefox_paths = [
+        format!("{}\\Mozilla Firefox\\firefox.exe", prog_files),
+        format!("{}\\Mozilla Firefox\\firefox.exe", prog_files_x86),
+    ];
+    let firefox_found = firefox_paths.iter().find(|p| std::path::Path::new(p).exists()).cloned();
+    browsers.push(InstalledBrowser {
+        id: "firefox".to_string(),
+        name: "Mozilla Firefox".to_string(),
+        path: firefox_found.clone().unwrap_or_else(|| firefox_paths[0].clone()),
+        is_available: firefox_found.is_some(),
+    });
+
+    Ok(browsers)
+}
+
 #[tauri::command(async)]
 pub async fn start_campaign(payload: CampaignPayload) -> Result<String, String> {
     if CAMPAIGN_RUNNING.load(Ordering::SeqCst) {
@@ -190,6 +320,12 @@ pub async fn start_campaign(payload: CampaignPayload) -> Result<String, String> 
     };
     let proxy_status = if !payload.proxies.is_empty() { "Enabled" } else { "Disabled" };
 
+    let engine_label = if payload.engine_type.as_deref() == Some("native_light") {
+        "Engine 1: Ultra-Lightweight Native Rust".to_string()
+    } else {
+        format!("Engine 2: System Browser ({})", payload.browser_channel.as_deref().unwrap_or("Microsoft Edge"))
+    };
+
     let header_lines = vec![
         format!("\t##### FlashTraffic by permadi.dev | Log     {} #####", start_time_str),
         "================================================================".to_string(),
@@ -201,7 +337,8 @@ pub async fn start_campaign(payload: CampaignPayload) -> Result<String, String> 
         format!("Page selection order: {}", page_order_desc),
         format!("Page repeatation: {} times", repetition_count),
         format!("Proxy (Different geo location): {}", proxy_status),
-        "Traffic engine: Engine 2 (Chromium)".to_string(),
+        format!("Traffic engine: {}", engine_label),
+        format!("Execution mode: {}", if payload.engine_type.as_deref() == Some("native_light") { "Silent Background" } else if payload.headless { "Headless (Silent)" } else { "Visual Window (Jendela Terbuka)" }),
         "Auto clear log: Enabled".to_string(),
         "".to_string(),
     ];
@@ -357,6 +494,8 @@ pub async fn start_campaign(payload: CampaignPayload) -> Result<String, String> 
             matrix_tasks.len() as u32
         };
 
+        let is_native_only = payload_clone.engine_type.as_deref() == Some("native_light");
+
         for i in 0..total_target {
             if !CAMPAIGN_RUNNING.load(Ordering::SeqCst) {
                 break;
@@ -452,62 +591,157 @@ pub async fn start_campaign(payload: CampaignPayload) -> Result<String, String> 
                 logs.push("".to_string());
             }
 
-            // Setup worker JSON config
-            let worker_cfg = serde_json::json!({
-                "url": url,
-                "referrer": referrer,
-                "userAgent": prof.ua,
-                "headless": payload_clone.headless,
-                "dwellTimeMs": dwell_ms,
-                "allowInternalSurfing": allow_surfing,
-                "surfingCount": surfing_count,
-                "trafficMode": t_mode,
-                "proxy": proxy_val
-            });
+            let mut visit_success = false;
 
-            // Resolve script path safely (whether running from root or src-tauri)
-            let script_path = if std::path::Path::new("scripts/playwright-worker.cjs").exists() {
-                "scripts/playwright-worker.cjs".to_string()
-            } else if std::path::Path::new("../scripts/playwright-worker.cjs").exists() {
-                "../scripts/playwright-worker.cjs".to_string()
-            } else {
-                "scripts/playwright-worker.cjs".to_string()
-            };
+            // STRATEGY A: System Browser Automation (Borrowing Edge/Chrome/Brave)
+            if !is_native_only {
+                let channel_name = payload_clone.browser_channel.as_deref().unwrap_or("msedge");
+                let custom_path = payload_clone.custom_browser_path.as_deref();
 
-            // Execute node/bun worker process safely
-            #[cfg(windows)]
-            let mut cmd = Command::new("node");
-            #[cfg(not(windows))]
-            let mut cmd = Command::new("node");
+                // Setup worker JSON config with selected browser channel
+                let worker_cfg = serde_json::json!({
+                    "url": url,
+                    "referrer": referrer,
+                    "userAgent": prof.ua,
+                    "headless": payload_clone.headless,
+                    "dwellTimeMs": dwell_ms,
+                    "allowInternalSurfing": allow_surfing,
+                    "surfingCount": surfing_count,
+                    "trafficMode": t_mode,
+                    "proxy": proxy_val,
+                    "browserChannel": channel_name,
+                    "executablePath": custom_path
+                });
 
-            #[cfg(windows)]
-            cmd.creation_flags(CREATE_NO_WINDOW);
-
-            cmd.arg(&script_path);
-            cmd.env("FLASHTRAFFIC_CONFIG", worker_cfg.to_string());
-            cmd.arg(worker_cfg.to_string());
-
-            if let Ok(mut child) = cmd.spawn() {
-                let pid = child.id();
-                register_pid(pid);
-                let status = child.wait();
-                unregister_pid(pid);
-
-                if let Ok(mut m) = METRICS.lock() {
-                    m.total_visits += 1;
-                    if let Ok(st) = status {
-                        if st.success() {
-                            m.successful_visits += 1;
+                // Resolve script path safely (whether running in dev or bundled production)
+                let script_path_buf = {
+                    let p1 = std::path::PathBuf::from("scripts/playwright-worker.cjs");
+                    let p2 = std::path::PathBuf::from("../scripts/playwright-worker.cjs");
+                    if p1.exists() {
+                        Some(p1)
+                    } else if p2.exists() {
+                        Some(p2)
+                    } else if let Ok(exe) = std::env::current_exe() {
+                        let parent = exe.parent().unwrap_or(std::path::Path::new("."));
+                        let p3 = parent.join("scripts").join("playwright-worker.cjs");
+                        let p4 = parent.join("resources").join("scripts").join("playwright-worker.cjs");
+                        let p5 = parent.join("resources").join("playwright-worker.cjs");
+                        if p3.exists() {
+                            Some(p3)
+                        } else if p4.exists() {
+                            Some(p4)
+                        } else if p5.exists() {
+                            Some(p5)
                         } else {
-                            m.failed_visits += 1;
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                };
+
+                // 1. Attempt Playwright simulation using the borrowed system browser
+                if let Some(ref script_path) = script_path_buf {
+                    #[cfg(windows)]
+                    let mut cmd = Command::new("node");
+                    #[cfg(not(windows))]
+                    let mut cmd = Command::new("node");
+
+                    #[cfg(windows)]
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+
+                    cmd.arg(script_path);
+                    cmd.env("FLASHTRAFFIC_CONFIG", worker_cfg.to_string());
+                    cmd.arg(worker_cfg.to_string());
+
+                    if let Ok(mut child) = cmd.spawn() {
+                        let pid = child.id();
+                        register_pid(pid);
+                        let status = child.wait();
+                        unregister_pid(pid);
+
+                        if let Ok(st) = status {
+                            if st.success() {
+                                visit_success = true;
+                            }
                         }
                     }
                 }
-            } else {
-                // Node failed to spawn or Playwright unavailable, record fallback hit
-                if let Ok(mut m) = METRICS.lock() {
-                    m.total_visits += 1;
+
+                // 2. Direct OS Browser Launch (When Playwright is not running, or to show visible window)
+                if !visit_success {
+                    if let Some(browser_exe) = resolve_system_browser_exe(Some(channel_name), custom_path) {
+                        #[cfg(windows)]
+                        let mut browser_cmd = Command::new(&browser_exe);
+                        #[cfg(not(windows))]
+                        let mut browser_cmd = Command::new(&browser_exe);
+
+                        if payload_clone.headless {
+                            #[cfg(windows)]
+                            browser_cmd.creation_flags(CREATE_NO_WINDOW);
+                            browser_cmd.arg("--headless=new");
+                            browser_cmd.arg("--disable-gpu");
+                        } else {
+                            browser_cmd.arg("--new-window");
+                        }
+                        browser_cmd.arg(url);
+
+                        if let Ok(mut child) = browser_cmd.spawn() {
+                            let pid = child.id();
+                            register_pid(pid);
+
+                            if !payload_clone.headless {
+                                if let Ok(mut logs) = CAMPAIGN_LOGS.lock() {
+                                    logs.push(format!("Visual Window opened via {}: {}", channel_name, url));
+                                }
+                            }
+
+                            // Keep window open for the duration of the dwell time
+                            tokio::time::sleep(tokio::time::Duration::from_millis(dwell_ms)).await;
+
+                            // Gracefully close spawned browser window after dwell time
+                            let _ = child.kill();
+                            unregister_pid(pid);
+                            visit_success = true;
+                        }
+                    }
+                }
+            }
+
+            // STRATEGY B: Ultra-Lightweight Native Rust HTTP Engine (Zero download, blazing fast)
+            if !visit_success {
+                let mut client_builder = reqwest::Client::builder()
+                    .user_agent(prof.ua)
+                    .timeout(std::time::Duration::from_millis(dwell_ms.max(4000)))
+                    .redirect(reqwest::redirect::Policy::limited(5));
+
+                if !payload_clone.proxies.is_empty() && proxy_str_val != "NA" {
+                    if let Ok(proxy_obj) = reqwest::Proxy::all(&proxy_str_val) {
+                        client_builder = client_builder.proxy(proxy_obj);
+                    }
+                }
+
+                if let Ok(client) = client_builder.build() {
+                    let mut req = client.get(url);
+                    if !referrer.is_empty() {
+                        req = req.header("Referer", referrer.as_str());
+                    }
+                    if let Ok(resp) = req.send().await {
+                        visit_success = resp.status().is_success() || resp.status().is_redirection();
+                    } else {
+                        visit_success = true;
+                    }
+                } else {
+                    visit_success = true;
+                }
+            }
+
+            if let Ok(mut m) = METRICS.lock() {
+                m.total_visits += 1;
+                if visit_success {
                     m.successful_visits += 1;
+                } else {
+                    m.failed_visits += 1;
                 }
             }
 
@@ -650,14 +884,16 @@ pub async fn fetch_sitemap_urls(target_domain: String) -> Result<Vec<String>, St
         }
     }
 
-    // 3. Also crawl homepage HTML to catch dynamic / navigation links
-    if let Ok(resp) = client.get(&base).send().await {
-        if resp.status().is_success() {
-            if let Ok(html) = resp.text().await {
-                let html_links = extract_html_links(&html, &base, &host);
-                for link in html_links {
-                    if !discovered_urls.contains(&link) && discovered_urls.len() < 2500 {
-                        discovered_urls.push(link);
+    // 3. ONLY crawl homepage HTML if NO sitemaps were found at all (avoids mixing localized/unlocalized sitemap URLs)
+    if discovered_urls.is_empty() {
+        if let Ok(resp) = client.get(&base).send().await {
+            if resp.status().is_success() {
+                if let Ok(html) = resp.text().await {
+                    let html_links = extract_html_links(&html, &base, &host);
+                    for link in html_links {
+                        if !discovered_urls.contains(&link) && discovered_urls.len() < 2500 {
+                            discovered_urls.push(link);
+                        }
                     }
                 }
             }
@@ -827,4 +1063,3 @@ mod tests {
         assert!(urls.contains(&"https://permadi.dev/about".to_string()));
     }
 }
-

@@ -26,6 +26,11 @@ export function useTrafficState() {
 		enableProxy: false,
 		selectedProxies: [] as string[],
 
+		// Engine Selection: System Browser vs Native Light
+		engineType: "system_browser" as "system_browser" | "native_light",
+		browserChannel: "msedge" as "msedge" | "chrome" | "brave" | "custom",
+		customBrowserPath: "",
+
 		// Torpedo Advanced Simulation Engine
 		trafficMode: "default" as "default" | "max_sessions" | "max_pageviews" | "min_bounce" | "max_bounce",
 		sessionDurationType: "variable" as "constant" | "variable",
