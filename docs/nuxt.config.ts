@@ -12,14 +12,14 @@ export default defineNuxtConfig({
   },
 
   app: {
-    baseURL: '/flashtraffic/',
+    baseURL: '/',
     head: {
       title: 'FlashTraffic - Web Traffic Simulator & Analytics Testing Desktop Platform',
       meta: [
         { name: 'description', content: 'Modern desktop web traffic simulation, load testing, and analytics attribution platform for Windows.' }
       ],
       link: [
-        { rel: 'icon', type: 'image/png', href: '/flashtraffic/icon.png' }
+        { rel: 'icon', type: 'image/png', href: '/icon.png' }
       ]
     }
   },

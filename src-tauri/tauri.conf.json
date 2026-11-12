@@ -30,7 +30,7 @@
 		"shortDescription": "Modern Web Traffic Simulation & Analytics Load Testing Desktop Platform",
 		"longDescription": "FlashTraffic is a modern, high-performance desktop platform for simulating human-like web traffic, stress-testing analytics attribution, and validating real cloud devices via BrowserStack and Playwright.",
 		"publisher": "narr07",
-		"homepage": "https://narr07.github.io/flashtraffic"
+		"homepage": "https://flashtraffic.permadi.dev"
 	},
 	"build": {
 		"beforeBuildCommand": "bun run generate",
